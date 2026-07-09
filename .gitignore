@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+*.zip
+
+# Reference material — not part of the published project
+examples/
+
+# Provider profiles stay local; only the schema is published
+extension/profiles/*
+!extension/profiles/profile.schema.json

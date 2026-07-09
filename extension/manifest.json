@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "OAuth Assist for HA",
+  "version": "0.1.0",
+  "description": "Captures mobile-app OAuth redirects (custom-scheme URLs) and forwards the authorization code to Home Assistant's official redirect service.",
+  "permissions": ["webNavigation", "tabs", "storage"],
+  "optional_permissions": ["cookies"],
+  "optional_host_permissions": ["https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "OAuth Assist for HA"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

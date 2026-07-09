@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ha-oauth-assist/profile.schema.json",
+  "title": "OAuth Assist for HA - provider profile (v1)",
+  "description": "Declares which login pages and redirect URIs the extension watches for one provider. Profiles never configure a forward destination: captured codes only ever go to https://my.home-assistant.io/redirect/oauth.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "name", "loginOrigins", "capture"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+      "description": "Short unique slug for the provider, e.g. \"acme-app\"."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "Human-readable provider name shown in the UI."
+    },
+    "description": { "type": "string" },
+    "loginOrigins": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^https://",
+        "description": "An https match pattern (e.g. \"https://login.acme-app.com/*\"). Enabling the profile requests a runtime host permission for each pattern."
+      }
+    },
+    "capture": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Capture steps. v1 supports only type \"redirect\"; the array form leaves room for future step types (e.g. an \"initiation\" handoff earlier in the flow).",
+      "items": {
+        "type": "object",
+        "required": ["type", "redirectPrefixes"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "redirect" },
+          "redirectPrefixes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "description": "URL prefix to intercept: a custom-scheme URI (e.g. \"com.acme.app://\") or an https prefix (e.g. \"https://login.acme-app.com/ios/\"). http:// and my.home-assistant.io are rejected."
+            }
+          }
+        }
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rule": {
+          "enum": ["ha-jwt", "none"],
+          "default": "ha-jwt",
+          "description": "\"ha-jwt\": auto-forward only when state is a Home Assistant flow JWT (contains flow_id). \"none\": forward whenever code and state are present."
+        }
+      }
+    }
+  }
+}

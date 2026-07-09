@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OAuth Assist for HA</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        width: 320px;
+        padding: 16px;
+        margin: 0;
+      }
+      h1 { font-size: 15px; margin: 0 0 8px; }
+      p { font-size: 12.5px; color: #777; margin: 0 0 10px; line-height: 1.5; }
+      .pin {
+        font-size: 11.5px;
+        background: rgba(76, 175, 80, 0.12);
+        color: #2e7d32;
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin-bottom: 10px;
+      }
+      @media (prefers-color-scheme: dark) {
+        .pin { color: #81c784; }
+        p { color: #aaa; }
+      }
+      #active { font-size: 12.5px; margin-bottom: 10px; }
+      #active li { margin: 2px 0; }
+      #active ul { margin: 4px 0 0; padding-left: 18px; }
+      .none { color: #b26a00; }
+      button {
+        display: block;
+        width: 100%;
+        padding: 8px 12px;
+        margin-top: 8px;
+        border-radius: 6px;
+        border: 1px solid #bbb;
+        background: transparent;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button.primary { background: #03a9f4; border-color: #03a9f4; color: #fff; }
+      #cookie-status { font-size: 11.5px; min-height: 14px; margin-top: 6px; color: #777; }
+    </style>
+  </head>
+  <body>
+    <h1>OAuth Assist for HA</h1>
+    <p>
+      Start the login from Home Assistant. When the provider redirects to its
+      mobile-app URL, this extension hands the authorization code back to Home
+      Assistant.
+    </p>
+    <div class="pin">🔒 Codes go only to my.home-assistant.io</div>
+    <div id="active">Loading…</div>
+    <button class="primary" id="open-options">Manage providers…</button>
+    <button id="clear-cookies">Clear login cookies for active providers</button>
+    <div id="cookie-status"></div>
+    <script src="shared.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
