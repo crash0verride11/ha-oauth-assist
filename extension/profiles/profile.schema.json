@@ -1,13 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/ha-oauth-assist/profile.schema.json",
-  "title": "OAuth Assist for HA - provider profile (v1)",
-  "description": "Declares which login pages and redirect URIs the extension watches for one provider. Profiles never configure a forward destination: captured codes only ever go to https://my.home-assistant.io/redirect/oauth.",
+  "title": "OAuth Assist for HA - provider profile (v2)",
+  "description": "Declares which login pages and redirect URIs the extension watches for one provider. Profiles never configure a forward destination: captured codes only ever go to https://my.home-assistant.io/redirect/oauth. Nor do they configure where Home Assistant hands over its routing token: that sentinel URL is a constant in the extension.",
   "type": "object",
   "required": ["schemaVersion", "id", "name", "loginOrigins", "capture"],
   "additionalProperties": false,
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": {
+      "enum": [1, 2],
+      "description": "1 is the original redirect-only profile. 2 adds the \"initiation\" capture step and the \"stashed\" state rule."
+    },
     "id": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
@@ -32,22 +35,42 @@
     "capture": {
       "type": "array",
       "minItems": 1,
-      "description": "Capture steps. v1 supports only type \"redirect\"; the array form leaves room for future step types (e.g. an \"initiation\" handoff earlier in the flow).",
+      "description": "Capture steps. Exactly one \"redirect\" step is required. An optional \"initiation\" step (schemaVersion 2) must come first, and requires state.rule \"stashed\".",
       "items": {
-        "type": "object",
-        "required": ["type", "redirectPrefixes"],
-        "additionalProperties": false,
-        "properties": {
-          "type": { "const": "redirect" },
-          "redirectPrefixes": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string",
-              "description": "URL prefix to intercept: a custom-scheme URI (e.g. \"com.acme.app://\") or an https prefix (e.g. \"https://login.acme-app.com/ios/\"). http:// and my.home-assistant.io are rejected."
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["type", "redirectPrefixes"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "const": "redirect" },
+              "redirectPrefixes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "description": "URL prefix to intercept: a custom-scheme URI (e.g. \"com.acme.app://\") or an https prefix (e.g. \"https://login.acme-app.com/ios/\"). http://, my.home-assistant.io, and the extension's own sentinel scheme are rejected."
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["type"],
+            "additionalProperties": false,
+            "description": "Declares that Home Assistant hands this provider's routing token (state_HA) to the extension BEFORE login, because the provider's callback state is opaque (e.g. ciphertext) and cannot be recognized as a Home Assistant flow. Carries no URLs and no parameter names on purpose: the sentinel URL is a constant in the extension, and the parameter names are fixed. There is nothing here to point at a hostile destination.",
+            "properties": {
+              "type": { "const": "initiation" },
+              "ttlSeconds": {
+                "type": "integer",
+                "minimum": 60,
+                "maximum": 900,
+                "default": 600,
+                "description": "How long a stashed pending flow stays usable. Single-use, and bound to the tab and profile that created it."
+              }
             }
           }
-        }
+        ]
       }
     },
     "state": {
@@ -55,9 +78,9 @@
       "additionalProperties": false,
       "properties": {
         "rule": {
-          "enum": ["ha-jwt", "none"],
+          "enum": ["ha-jwt", "none", "stashed"],
           "default": "ha-jwt",
-          "description": "\"ha-jwt\": auto-forward only when state is a Home Assistant flow JWT (contains flow_id). \"none\": forward whenever code and state are present."
+          "description": "\"ha-jwt\": auto-forward only when state is a Home Assistant flow JWT (contains flow_id). \"none\": forward whenever code and state are present. \"stashed\" (schemaVersion 2): the callback's state is opaque; forward the state_HA stashed by the \"initiation\" step instead, and never forward the provider's own state. Requires an \"initiation\" step, and vice versa."
         }
       }
     }

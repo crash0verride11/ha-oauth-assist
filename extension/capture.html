@@ -76,6 +76,31 @@
       </div>
     </div>
 
+    <div id="stashed" hidden>
+      <p class="muted">
+        A response was captured, but it couldn't be sent to Home Assistant
+        automatically — the login may have taken too long, or finished in a
+        different tab. You can still send it now.
+      </p>
+      <div class="box ok">
+        <div>Provider: <span id="stashedProvider"></span></div>
+        <button class="primary" id="sendToHa">Send to Home Assistant</button>
+      </div>
+    </div>
+
+    <div id="stashedExpired" hidden>
+      <p class="muted">
+        This response couldn't be matched to a login started from Home
+        Assistant — the flow may have expired, or you may be using Home
+        Assistant's <strong>manual</strong> sign-in step. For the manual step,
+        copy the callback URL below and paste it into Home Assistant.
+        Otherwise, start the login again from Home Assistant.
+      </p>
+      <div class="box">
+        <button class="primary" id="copyRaw">Copy callback URL</button>
+      </div>
+    </div>
+
     <div id="failure" hidden>
       <p class="muted">The provider returned an error instead of a code.</p>
       <div class="box err">
@@ -93,6 +118,7 @@
 
     <div id="toast">Copied to clipboard</div>
 
+    <script src="shared.js"></script>
     <script src="capture.js"></script>
   </body>
 </html>
