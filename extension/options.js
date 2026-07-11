@@ -32,10 +32,18 @@ async function loadPresets() {
   }
   const presets = [];
   for (const file of index.presets || []) {
-    const raw = await (await fetch(chrome.runtime.getURL(`profiles/${file}`))).json();
-    const result = OA.validateProfile(raw);
-    if (result.ok) presets.push(result.profile);
-    else console.error(`Bundled profile ${file} is invalid:`, result.errors);
+    // Per-file guard: a preset listed in index.json but missing, unreadable, or
+    // not valid JSON must not blank the whole Providers list. Skip it and move
+    // on — without this, one moved/deleted profile threw out of loadPresets,
+    // rejected render()'s Promise.all, and nothing rendered.
+    try {
+      const raw = await (await fetch(chrome.runtime.getURL(`profiles/${file}`))).json();
+      const result = OA.validateProfile(raw);
+      if (result.ok) presets.push(result.profile);
+      else console.error(`Bundled profile ${file} is invalid:`, result.errors);
+    } catch (e) {
+      console.error(`Could not load bundled profile ${file}:`, e);
+    }
   }
   return presets;
 }
