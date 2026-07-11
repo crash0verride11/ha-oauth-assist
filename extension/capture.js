@@ -17,12 +17,70 @@ function toast() {
   setTimeout(() => t.classList.remove("show"), 2000);
 }
 
+/**
+ * Encrypted-state flows. The code is ciphertext and the routing token lives in
+ * the pending flow, not with the user — so masking the code and offering "copy"
+ * would be theatre, and pasting it anywhere would accomplish nothing. Offer the
+ * one action that can work: perform the same pinned forward, on a click.
+ *
+ * The tab binding enforced in background.js can't be checked from a page, but
+ * this path is a deliberate user action on the tab the callback landed in, and
+ * the destination is still the HA_FORWARD_URL constant. Nothing is widened.
+ */
+async function initStashed(lastCapture) {
+  const { pendingFlow } = await chrome.storage.local.get("pendingFlow");
+  const live =
+    pendingFlow &&
+    pendingFlow.stateHa &&
+    pendingFlow.profileId === lastCapture.profileId &&
+    Date.now() - (pendingFlow.time || 0) < (pendingFlow.ttlMs || 0) &&
+    !pendingFlow.consumedFor;
+
+  if (!live || (!lastCapture.code && !lastCapture.error)) {
+    // No flow to forward into. This is also where HA's MANUAL sign-in path
+    // lands (no sentinel ran, so nothing is pending): the user needs the raw
+    // callback URL to paste into HA, and we intercepted it. Hand it back.
+    const copyRaw = document.getElementById("copyRaw");
+    if (lastCapture.raw) {
+      copyRaw.addEventListener("click", async () => {
+        await navigator.clipboard.writeText(lastCapture.raw);
+        toast();
+      });
+    } else {
+      copyRaw.parentElement.hidden = true;
+    }
+    show("stashedExpired");
+    return;
+  }
+
+  document.getElementById("stashedProvider").textContent = lastCapture.profileId;
+  document.getElementById("sendToHa").addEventListener("click", async () => {
+    const haUrl = new URL(OAuthAssist.HA_FORWARD_URL);
+    if (lastCapture.code) haUrl.searchParams.set("code", lastCapture.code);
+    if (lastCapture.error) {
+      haUrl.searchParams.set("error", lastCapture.error);
+      if (lastCapture.errorDescription) {
+        haUrl.searchParams.set("error_description", lastCapture.errorDescription);
+      }
+    }
+    haUrl.searchParams.set("state", pendingFlow.stateHa);
+    await chrome.storage.local.remove("pendingFlow");
+    window.location.href = haUrl.toString();
+  });
+  show("stashed");
+}
+
 async function init() {
   const { lastCapture } = await chrome.storage.local.get("lastCapture");
 
   // Only show a capture from the last 10 minutes; older ones are stale.
   if (!lastCapture || Date.now() - lastCapture.time > 10 * 60 * 1000) {
     show("noCode");
+    return;
+  }
+
+  if (lastCapture.rule === "stashed") {
+    await initStashed(lastCapture);
     return;
   }
 
