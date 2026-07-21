@@ -149,11 +149,6 @@ async function handleRedirect(tabId, url) {
   const match = watch.find((w) => url.startsWith(w.prefix));
   if (!match) return;
 
-  const now = Date.now();
-  if (url === lastHandledUrl && now - lastHandledAt < 5000) return;
-  lastHandledUrl = url;
-  lastHandledAt = now;
-
   let urlObj;
   try {
     urlObj = new URL(url);
@@ -164,6 +159,17 @@ async function handleRedirect(tabId, url) {
   const code = q.get("code");
   const state = q.get("state");
   const error = q.get("error");
+
+  // A completed OAuth authorization response always carries either a `code`
+  // (success) or an `error` (failure) query parameter. Without one, matching the
+  // prefix is not enough to call this a callback: it's the user reaching the
+  // redirect URI some other way to start a manual/CLI login. 
+  if (!code && !error) return;
+
+  const now = Date.now();
+  if (url === lastHandledUrl && now - lastHandledAt < 5000) return;
+  lastHandledUrl = url;
+  lastHandledAt = now;
 
   // Encrypted-state flow: the routing token came from the sentinel, not the
   // callback. The provider's own `state` is ciphertext and is never forwarded —
