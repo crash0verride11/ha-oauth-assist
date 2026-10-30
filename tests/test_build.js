@@ -48,6 +48,11 @@ t("shared.js must load first in firefox", throws(() =>
   B.checkManifests(files(chromeM, { ...firefoxM, background: { scripts: ["background.js", "shared.js"] } }))));
 t("bad version rejected", throws(() =>
   B.checkManifests(files({ ...chromeM, version: "v1" }, { ...firefoxM, version: "v1" }))));
+const desc = (n) => "x".repeat(n);
+t("132-char description passes", !throws(() =>
+  B.checkManifests(files({ ...chromeM, description: desc(132) }, { ...firefoxM, description: desc(132) }))));
+t("133-char description rejected", throws(() =>
+  B.checkManifests(files({ ...chromeM, description: desc(133) }, { ...firefoxM, description: desc(133) }))));
 
 const fx = B.packageFiles(files(chromeM, firefoxM), "firefox");
 t("firefox gets firefox manifest", JSON.parse(fx["manifest.json"]).background.scripts);

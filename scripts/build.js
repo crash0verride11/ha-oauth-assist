@@ -86,6 +86,10 @@ function checkManifests(files) {
   if (!/^\d+(\.\d+){0,3}$/.test(chrome.version)) {
     throw new Error(`Invalid version ${JSON.stringify(chrome.version)}.`);
   }
+  // The Chrome Web Store rejects uploads whose description exceeds 132 characters.
+  if (typeof chrome.description === "string" && chrome.description.length > 132) {
+    throw new Error(`description is ${chrome.description.length} characters; the Chrome Web Store allows 132.`);
+  }
   return chrome.version;
 }
 
