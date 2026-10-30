@@ -1,0 +1,65 @@
+# Builds the store packages for a version tag and publishes them as a GitHub
+# release. Store uploads (Chrome Web Store, AMO) stay manual.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# The packages come from scripts/build.js, which is byte-reproducible: anyone
+# can rebuild a tag and compare against the SHA-256s in the release notes.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Test
+        run: |
+          node tests/test_shared.js
+          node tests/test_build.js
+
+      - name: Check tag matches manifest version
+        run: |
+          version=$(node -p 'require("./extension/manifest.json").version')
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match manifest version ${version} (expected v${version})."
+            exit 1
+          fi
+
+      # build.js also fails if manifest.json and manifest.firefox.json drift.
+      - name: Build
+        run: node scripts/build.js HEAD
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Store packages built from \`${GITHUB_SHA}\`."
+            echo
+            echo '```'
+            sha256sum dist/*.zip
+            echo '```'
+            echo
+            echo "To verify, rebuild from this tag and compare the hashes:"
+            echo
+            echo '```sh'
+            echo "git checkout ${GITHUB_REF_NAME} && node scripts/build.js"
+            echo '```'
+          } > release-notes.md
+          gh release create "${GITHUB_REF_NAME}" dist/*.zip \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            --generate-notes

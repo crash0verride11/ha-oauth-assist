@@ -142,6 +142,19 @@ nothing else.
   manifests differ in anything other than `background` and
   `browser_specific_settings`, so bump `version` in both.
 
+### Releasing
+
+Bump `version` in both manifests, commit, then push a matching tag:
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The [release workflow](.github/workflows/release.yml) runs the tests,
+checks that the tag matches the manifest version, builds both packages, and
+publishes a GitHub release with the zips and their SHA-256 hashes. Uploading
+to the Chrome Web Store and Firefox AMO is done by hand from those zips.
+
 ## How it works
 
 The background worker listens to `webNavigation.onBeforeNavigate` /
