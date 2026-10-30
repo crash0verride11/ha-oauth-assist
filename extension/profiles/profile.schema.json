@@ -60,6 +60,34 @@
           "description": "\"ha-jwt\": auto-forward only when state is a Home Assistant flow JWT (contains flow_id). \"none\": forward whenever code and state are present."
         }
       }
+    },
+    "requestHeaders": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "description": "Request-header changes applied to requests to the loginOrigins hosts only (e.g. a mobile User-Agent for an IdP that rejects desktop browsers). Only browser-identity headers may be changed: User-Agent and Sec-CH-UA / Sec-CH-UA-*. Each header may appear once.",
+      "items": {
+        "type": "object",
+        "required": ["header", "operation"],
+        "additionalProperties": false,
+        "properties": {
+          "header": {
+            "type": "string",
+            "pattern": "^([Uu][Ss][Ee][Rr]-[Aa][Gg][Ee][Nn][Tt]|[Ss][Ee][Cc]-[Cc][Hh]-[Uu][Aa](-[A-Za-z0-9]+)*)$",
+            "description": "Case-insensitive: User-Agent, Sec-CH-UA, or Sec-CH-UA-<hint> (e.g. Sec-CH-UA-Platform)."
+          },
+          "operation": { "enum": ["set", "remove"] },
+          "value": {
+            "type": "string",
+            "pattern": "^[\\x20-\\x7e]+$",
+            "maxLength": 512,
+            "description": "Required for \"set\", forbidden for \"remove\"."
+          }
+        },
+        "if": { "properties": { "operation": { "const": "set" } } },
+        "then": { "required": ["value"] },
+        "else": { "not": { "required": ["value"] } }
+      }
     }
   }
 }

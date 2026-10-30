@@ -66,6 +66,78 @@ function isValidRedirectPrefix(prefix) {
 const STATE_RULES = ["ha-jwt", "none"];
 
 /**
+ * Request-header policy. Profiles carry the header VALUES (e.g. a mobile
+ * User-Agent for an IdP that rejects desktop browsers), so a provider quirk
+ * never needs an extension release. The extension only fixes WHICH headers a
+ * profile may touch: browser-identity headers, nothing that carries
+ * credentials (Cookie, Authorization) or protects against CSRF (Origin,
+ * Referer). Rules always apply to the profile's own loginOrigins.
+ */
+const HEADER_NAME_PATTERN = /^(user-agent|sec-ch-ua(-[a-z0-9]+)*)$/i;
+const HEADER_OPERATIONS = ["set", "remove"];
+const HEADER_VALUE_MAX = 512;
+const HEADER_OPS_MAX = 16;
+const HEADER_RULE_RESOURCE_TYPES = [
+  "main_frame",
+  "sub_frame",
+  "xmlhttprequest",
+  "script",
+  "other",
+];
+
+function validateRequestHeaders(raw, errors) {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > HEADER_OPS_MAX) {
+    errors.push(`requestHeaders must be an array of 1-${HEADER_OPS_MAX} header operations.`);
+    return [];
+  }
+  const ops = [];
+  const seen = new Set();
+  for (const op of raw) {
+    if (!op || typeof op !== "object" || Array.isArray(op)) {
+      errors.push("requestHeaders entry must be an object.");
+      continue;
+    }
+    if (typeof op.header !== "string" || !HEADER_NAME_PATTERN.test(op.header)) {
+      errors.push(
+        `requestHeaders may only modify User-Agent or Sec-CH-UA* headers, not ${JSON.stringify(op.header)}.`,
+      );
+      continue;
+    }
+    const key = op.header.toLowerCase();
+    if (seen.has(key)) {
+      errors.push(`requestHeaders lists ${op.header} more than once.`);
+      continue;
+    }
+    seen.add(key);
+    if (!HEADER_OPERATIONS.includes(op.operation)) {
+      errors.push(`requestHeaders operation must be one of: ${HEADER_OPERATIONS.join(", ")}.`);
+      continue;
+    }
+    if (op.operation === "set") {
+      // Printable ASCII only: no CR/LF header injection, no control chars.
+      if (
+        typeof op.value !== "string" ||
+        !/^[\x20-\x7e]+$/.test(op.value) ||
+        op.value.length > HEADER_VALUE_MAX
+      ) {
+        errors.push(
+          `requestHeaders "set" for ${op.header} needs a printable-ASCII value (max ${HEADER_VALUE_MAX} chars).`,
+        );
+        continue;
+      }
+      ops.push({ header: op.header, operation: "set", value: op.value });
+    } else {
+      if (op.value !== undefined) {
+        errors.push(`requestHeaders "remove" for ${op.header} must not have a value.`);
+        continue;
+      }
+      ops.push({ header: op.header, operation: "remove" });
+    }
+  }
+  return ops;
+}
+
+/**
  * Validates a profile object. Returns { ok: true, profile } with a normalized
  * copy, or { ok: false, errors: [...] }.
  *
@@ -79,7 +151,11 @@ const STATE_RULES = ["ha-jwt", "none"];
  *   "capture": [                        // array => room for future step types
  *     { "type": "redirect", "redirectPrefixes": ["com.acme.app://"] }
  *   ],
- *   "state": { "rule": "ha-jwt" }       // optional; "ha-jwt" (default) or "none"
+ *   "state": { "rule": "ha-jwt" },      // optional; "ha-jwt" (default) or "none"
+ *   "requestHeaders": [                 // optional; applied to loginOrigins only
+ *     { "header": "User-Agent", "operation": "set", "value": "Mozilla/5.0 (iPhone; …)" },
+ *     { "header": "Sec-CH-UA", "operation": "remove" }
+ *   ]
  * }
  *
  * Only capture type "redirect" exists in v1. A future "initiation" step type
@@ -152,20 +228,22 @@ function validateProfile(raw) {
     }
   }
 
+  const requestHeaders =
+    raw.requestHeaders === undefined ? null : validateRequestHeaders(raw.requestHeaders, errors);
+
   if (errors.length) return { ok: false, errors };
 
-  return {
-    ok: true,
-    profile: {
-      schemaVersion: PROFILE_SCHEMA_VERSION,
-      id: raw.id,
-      name: raw.name.trim(),
-      description: (raw.description || "").trim(),
-      loginOrigins: [...raw.loginOrigins],
-      capture: [{ type: "redirect", redirectPrefixes }],
-      state: { rule: stateRule },
-    },
+  const profile = {
+    schemaVersion: PROFILE_SCHEMA_VERSION,
+    id: raw.id,
+    name: raw.name.trim(),
+    description: (raw.description || "").trim(),
+    loginOrigins: [...raw.loginOrigins],
+    capture: [{ type: "redirect", redirectPrefixes }],
+    state: { rule: stateRule },
   };
+  if (requestHeaders) profile.requestHeaders = requestHeaders;
+  return { ok: true, profile };
 }
 
 /** All redirect prefixes of a validated profile, flattened. */
@@ -175,10 +253,77 @@ function profileRedirectPrefixes(profile) {
     .flatMap((s) => s.redirectPrefixes);
 }
 
+/**
+ * Host of a validated login-origin pattern, for declarativeNetRequest's
+ * requestDomains (which already matches subdomains):
+ * "https://login.acme-app.com/*" -> "login.acme-app.com",
+ * "https://*.acme-app.com/*" -> "acme-app.com".
+ */
+function loginOriginHost(pattern) {
+  const host = pattern.slice("https://".length).split("/")[0].toLowerCase();
+  return host.startsWith("*.") ? host.slice(2) : host;
+}
+
+/**
+ * declarativeNetRequest dynamic rules for the given (enabled) profiles: one
+ * modifyHeaders rule per profile that declares requestHeaders, scoped to its
+ * login hosts. Used with declarativeNetRequestWithHostAccess, so a rule is
+ * inert on any host whose permission the user has not granted.
+ */
+function buildHeaderRules(profiles) {
+  const rules = [];
+  for (const profile of profiles) {
+    const ops = profile.requestHeaders || [];
+    if (!ops.length) continue;
+    const hosts = [...new Set(profile.loginOrigins.map(loginOriginHost))];
+    if (hosts.includes("*")) continue; // "https://*/*" is not a login site
+    rules.push({
+      id: rules.length + 1,
+      priority: 1,
+      action: {
+        type: "modifyHeaders",
+        requestHeaders: ops.map((op) => ({ ...op })),
+      },
+      condition: {
+        requestDomains: hosts,
+        resourceTypes: [...HEADER_RULE_RESOURCE_TYPES],
+      },
+    });
+  }
+  return rules;
+}
+
 /** Loads the enabled-profiles map from storage: { [id]: { profile, enabled, source, addedAt } } */
 async function loadProfileStore() {
   const { profiles } = await chrome.storage.local.get("profiles");
   return profiles || {};
+}
+
+/**
+ * Bundled presets, loaded from the packaged profiles/ directory.
+ * A build may ship without presets (no profiles/index.json) — that's fine;
+ * providers are then added via import only.
+ */
+async function loadPresets() {
+  let index;
+  try {
+    index = await (await fetch(chrome.runtime.getURL("profiles/index.json"))).json();
+  } catch (e) {
+    return [];
+  }
+  const presets = [];
+  for (const file of index.presets || []) {
+    // Per-file guard: one missing or broken preset must not drop the rest.
+    try {
+      const raw = await (await fetch(chrome.runtime.getURL(`profiles/${file}`))).json();
+      const result = validateProfile(raw);
+      if (result.ok) presets.push(result.profile);
+      else console.error(`Bundled profile ${file} is invalid:`, result.errors);
+    } catch (e) {
+      console.error(`Could not load bundled profile ${file}:`, e);
+    }
+  }
+  return presets;
 }
 
 // Export for the pages (the background worker just uses the globals).
@@ -191,6 +336,9 @@ if (typeof globalThis !== "undefined") {
     isValidRedirectPrefix,
     validateProfile,
     profileRedirectPrefixes,
+    loginOriginHost,
+    buildHeaderRules,
     loadProfileStore,
+    loadPresets,
   };
 }

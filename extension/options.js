@@ -7,6 +7,8 @@
  *   2. on grant, stores the profile as enabled in chrome.storage.local.
  * Disabling removes the stored enablement and releases the host permission
  * (unless another enabled profile still needs the same origin).
+ * The background worker turns enabled profiles' requestHeaders into
+ * declarativeNetRequest rules whenever the stored profiles change.
  */
 
 // Note: no destructuring into top-level const here — shared.js's function
@@ -17,28 +19,6 @@ const OA = globalThis.OAuthAssist;
 const listEl = document.getElementById("profile-list");
 const importFileEl = document.getElementById("import-file");
 const importStatusEl = document.getElementById("import-status");
-
-/**
- * Bundled presets, loaded once from the packaged profiles/ directory.
- * A build may ship without presets (no profiles/index.json) — that's fine;
- * providers are then added via import only.
- */
-async function loadPresets() {
-  let index;
-  try {
-    index = await (await fetch(chrome.runtime.getURL("profiles/index.json"))).json();
-  } catch (e) {
-    return [];
-  }
-  const presets = [];
-  for (const file of index.presets || []) {
-    const raw = await (await fetch(chrome.runtime.getURL(`profiles/${file}`))).json();
-    const result = OA.validateProfile(raw);
-    if (result.ok) presets.push(result.profile);
-    else console.error(`Bundled profile ${file} is invalid:`, result.errors);
-  }
-  return presets;
-}
 
 async function saveProfileEntry(profile, { enabled, source }) {
   const store = await OA.loadProfileStore();
@@ -152,6 +132,18 @@ function profileCard(profile, { enabled, source }) {
     prefixes.append(c);
   });
   dl.append(origins, prefixes);
+  const headerOps = profile.requestHeaders || [];
+  if (headerOps.length) {
+    const headers = document.createElement("div");
+    headers.append("Request headers changed on the login site: ");
+    headerOps.forEach((op, i) => {
+      if (i) headers.append(", ");
+      const c = document.createElement("code");
+      c.textContent = op.operation === "set" ? `${op.header}: ${op.value}` : `${op.header} (removed)`;
+      headers.append(c);
+    });
+    dl.append(headers);
+  }
   details.append(dl);
 
   const row = document.createElement("div");
@@ -184,7 +176,7 @@ function profileCard(profile, { enabled, source }) {
 }
 
 async function render() {
-  const [presets, store] = await Promise.all([loadPresets(), OA.loadProfileStore()]);
+  const [presets, store] = await Promise.all([OA.loadPresets(), OA.loadProfileStore()]);
   listEl.textContent = "";
 
   const seen = new Set();
@@ -232,14 +224,20 @@ importFileEl.addEventListener("change", async () => {
   }
 
   const store = await OA.loadProfileStore();
-  if (store[result.profile.id]?.source === "bundled") {
+  const existing = store[result.profile.id];
+  if (existing?.source === "bundled") {
     importStatusEl.textContent = `A bundled profile already uses id "${result.profile.id}".`;
     importStatusEl.className = "status err";
     return;
   }
 
+  // Re-importing an enabled profile is an update: disable it first so its
+  // host permissions are released and Enable asks for consent to the new
+  // version (which may watch or change different things).
+  if (existing?.enabled) await disableProfile(result.profile.id);
+
   await saveProfileEntry(result.profile, { enabled: false, source: "imported" });
-  importStatusEl.textContent = `Imported "${result.profile.name}". Click Enable to grant its site permission and activate it.`;
+  importStatusEl.textContent = `${existing ? "Updated" : "Imported"} "${result.profile.name}". Click Enable to grant its site permission and activate it.`;
   importStatusEl.className = "status ok";
   importFileEl.value = "";
   render();

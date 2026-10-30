@@ -10,6 +10,9 @@
  *
  * The forward destination is the constant HA_FORWARD_URL in shared.js and is
  * never configurable — profiles only choose what to watch.
+ *
+ * Profiles may also declare requestHeaders (restricted to browser-identity
+ * headers), applied to their login hosts via declarativeNetRequest.
  */
 
 // Chrome runs this as a service worker (importScripts); Firefox loads
@@ -44,7 +47,83 @@ async function getWatchList() {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes.profiles) watchCache = null;
+  if (area === "local" && changes.profiles) {
+    watchCache = null;
+    syncHeaderRules();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Request-header rules. Enabled profiles that declare requestHeaders get a
+// declarativeNetRequest dynamic rule on their login hosts (e.g. a mobile
+// User-Agent for an IdP that rejects desktop browsers). Dynamic rules persist
+// across restarts; they are rebuilt whenever the stored profiles change.
+// ---------------------------------------------------------------------------
+
+// Serialized: overlapping syncs would each remove the same old ids and then
+// both try to add rule id 1, and the second update would be rejected.
+let headerSync = Promise.resolve();
+
+function syncHeaderRules() {
+  headerSync = headerSync.then(async () => {
+    try {
+      const store = await loadProfileStore();
+      const enabled = Object.values(store)
+        .filter((e) => e && e.enabled && e.profile)
+        .map((e) => e.profile);
+      const existing = await chrome.declarativeNetRequest.getDynamicRules();
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: existing.map((r) => r.id),
+        addRules: buildHeaderRules(enabled),
+      });
+    } catch (e) {
+      console.error("Could not update request-header rules:", e);
+    }
+  });
+  return headerSync;
+}
+
+// ---------------------------------------------------------------------------
+// Bundled preset refresh. Enabling a profile stores a snapshot of it, so an
+// updated preset (say, a new User-Agent string) would otherwise never reach
+// users who enabled the old one. On extension update, replace bundled
+// snapshots with the packaged versions. If the new version needs a login
+// origin the user has not granted, disable it so re-enabling asks for consent.
+// ---------------------------------------------------------------------------
+
+async function refreshBundledProfiles() {
+  const presets = await loadPresets();
+  if (!presets.length) return;
+  const store = await loadProfileStore();
+  let changed = false;
+  for (const preset of presets) {
+    const entry = store[preset.id];
+    if (!entry || entry.source !== "bundled") continue;
+    if (JSON.stringify(entry.profile) === JSON.stringify(preset)) continue;
+    entry.profile = preset;
+    if (entry.enabled) {
+      const granted = await chrome.permissions.contains({ origins: preset.loginOrigins });
+      if (!granted) entry.enabled = false;
+    }
+    changed = true;
+  }
+  // The storage change triggers syncHeaderRules via onChanged.
+  if (changed) await chrome.storage.local.set({ profiles: store });
+}
+
+chrome.runtime.onInstalled.addListener(async (details) => {
+  if (details.reason === "update") {
+    try {
+      await refreshBundledProfiles();
+    } catch (e) {
+      console.error("Could not refresh bundled profiles:", e);
+    }
+  }
+  syncHeaderRules();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  syncHeaderRules();
 });
 
 // ---------------------------------------------------------------------------

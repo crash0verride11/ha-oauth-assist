@@ -33,6 +33,10 @@ extension is that something.
 - **Auto-forward is gated.** By default a code is forwarded only when the
   OAuth `state` is a Home Assistant flow token (a JWT carrying `flow_id`).
   Anything else lands on a local capture page for manual copy.
+- **Header changes are narrow.** A profile may change browser-identity
+  request headers (`User-Agent`, `Sec-CH-UA*`) on its own login site, and
+  nothing else: no cookies, credentials, or origin headers, and no other
+  hosts. The changes are listed on the options page before you enable it.
 
 ## Repository layout
 
@@ -74,6 +78,24 @@ A profile is a small JSON file declaring what to watch for one provider:
 - `capture` is an array so future step types (e.g. an *initiation capture*
   earlier in the flow, as some providers require) can be added without a
   schema rewrite. v1 supports only `"redirect"`.
+- `requestHeaders` (optional) — header changes for requests to the
+  `loginOrigins` hosts, for identity providers that reject desktop browsers:
+
+  ```json
+  "requestHeaders": [
+    { "header": "User-Agent", "operation": "set",
+      "value": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1" },
+    { "header": "Sec-CH-UA", "operation": "remove" },
+    { "header": "Sec-CH-UA-Mobile", "operation": "remove" },
+    { "header": "Sec-CH-UA-Platform", "operation": "remove" }
+  ]
+  ```
+
+  The values live in the profile, so a provider change needs only a profile
+  update, not a new extension release. Only `User-Agent` and
+  `Sec-CH-UA` / `Sec-CH-UA-*` may be touched, with `set` or `remove`. This
+  changes request headers only; page JavaScript still sees the real
+  `navigator.userAgent`.
 
 Providers are added by importing a profile JSON on the options page — no code
 changes. A packaged build may additionally ship presets via
@@ -104,6 +126,17 @@ browser) and `tabs.onUpdated` (for IdPs that reach the callback via
 prefix is parsed for `code` and `state`; Home Assistant flows are rewritten to
 the pinned redirect service, everything else goes to the local capture page.
 Captured values pass through `chrome.storage`, never through page URLs.
+
+Profiles with `requestHeaders` become `declarativeNetRequest` dynamic rules,
+rebuilt whenever the enabled profiles change. The extension uses
+`declarativeNetRequestWithHostAccess`, so a rule has no effect on any host
+whose permission you haven't granted.
+
+Enabling a profile stores a copy of it. On extension update, copies of bundled
+presets are refreshed from the packaged versions. If a new version needs a
+login site you haven't granted, it is switched off until you enable it again.
+Re-importing an imported profile replaces it and switches it off, so enabling
+it asks for consent to the new version.
 
 ## Icons
 
