@@ -165,8 +165,8 @@ it asks for consent to the new version.
 
 ## Icons
 
-Interim icon set. A Home Assistant–themed set will replace it before store
-submission.
+Interim icon set. The 32 and 96 px sizes are downscaled from the 128 px icon.
+A redesigned set may replace it in a later release.
 
 ## Roadmap
 
