@@ -45,8 +45,11 @@ extension is that something.
 - [extension/profiles/](extension/profiles/) — the
   [profile schema](extension/profiles/profile.schema.json). Provider profiles
   themselves are not part of this repository; they are loaded by the user.
+- [scripts/build.js](scripts/build.js) — reproducible store packages (see
+  [Packaging](#packaging)).
 - [tests/](tests/) — Node-based tests for profile validation and the
-  capture/forward logic (`node tests/test_shared.js`).
+  capture/forward logic (`node tests/test_shared.js`) and for the packager
+  (`node tests/test_build.js`).
 
 ## Provider profiles
 
@@ -117,6 +120,28 @@ changes. A packaged build may additionally ship presets via
 Store publication (Chrome Web Store + Firefox AMO) is the roadmap's top
 priority precisely so step 1 stops involving Developer mode.
 
+## Packaging
+
+```sh
+node scripts/build.js [git-ref]   # default: HEAD
+```
+
+This writes `dist/oauth-assist-for-ha-<version>-chrome.zip` and
+`-firefox.zip` and prints their SHA-256 hashes. You need Node and git, and
+nothing else.
+
+- **Built from git, not the working directory.** Only files committed under
+  `extension/` at the given ref are packaged. Uncommitted edits and
+  untracked files (such as locally loaded profiles) are never included.
+- **Reproducible.** Entries are sorted, stored uncompressed, and stamped with
+  a fixed date. Rebuilding the same commit on any machine gives the same
+  bytes, so you can check a store package against its tag by comparing the
+  printed hashes.
+- **One manifest per browser.** The Firefox package ships
+  `manifest.firefox.json` as its `manifest.json`. The build fails if the two
+  manifests differ in anything other than `background` and
+  `browser_specific_settings`, so bump `version` in both.
+
 ## How it works
 
 The background worker listens to `webNavigation.onBeforeNavigate` /
@@ -146,6 +171,7 @@ submission.
 ## Roadmap
 
 1. Publish signed builds to the Chrome Web Store and Firefox AMO.
-2. Reproducible build/packaging script linked from the store listings.
+2. Link the reproducible build ([Packaging](#packaging)) from the store
+   listings.
 3. Phase 2: an `initiation` capture step type for providers whose flow needs
    an extra handoff before the final redirect.
