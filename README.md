@@ -41,7 +41,7 @@ extension is that something.
 ## Repository layout
 
 - [extension/](extension/) — the extension itself (load this directory
-  unpacked while unsigned; store publication is the goal).
+  unpacked for development).
 - [extension/profiles/](extension/profiles/) — the
   [profile schema](extension/profiles/profile.schema.json). Provider profiles
   themselves are not part of this repository; they are loaded by the user.
@@ -104,6 +104,16 @@ Providers are added by importing a profile JSON on the options page — no code
 changes. A packaged build may additionally ship presets via
 `profiles/index.json`; the extension works fine without any.
 
+## Install
+
+- **Chrome / Edge:** [Chrome Web Store](https://chromewebstore.google.com/detail/oauth-assist-for-ha/mdoleppdlojmeeogmmocmjnkemecaofh).
+  In Edge, allow extensions from other stores when prompted.
+- **Firefox:** coming to Firefox Add-ons (AMO).
+
+Then import the provider profile published with your integration on the
+extension's options page, click *Enable*, accept the site-permission prompt,
+and start the integration's login from Home Assistant as usual.
+
 ## Install (development)
 
 1. `chrome://extensions` → enable Developer mode → *Load unpacked* → select
@@ -116,9 +126,6 @@ changes. A packaged build may additionally ship presets via
 2. Open the extension's options page, enable a provider, and accept the
    site-permission prompt.
 3. Start the integration's login from Home Assistant as usual.
-
-Store publication (Chrome Web Store + Firefox AMO) is the roadmap's top
-priority precisely so step 1 stops involving Developer mode.
 
 ## Packaging
 
@@ -183,7 +190,7 @@ A redesigned set may replace it in a later release.
 
 ## Roadmap
 
-1. Publish signed builds to the Chrome Web Store and Firefox AMO.
+1. Publish a signed build to Firefox AMO (Chrome Web Store: done).
 2. Link the reproducible build ([Packaging](#packaging)) from the store
    listings.
 3. Phase 2: an `initiation` capture step type for providers whose flow needs
