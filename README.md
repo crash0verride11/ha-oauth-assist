@@ -28,8 +28,9 @@ extension is that something.
   provider profile triggers a browser permission prompt for that provider's
   login site only (`optional_host_permissions` + `chrome.permissions.request`).
 - **No remote code, no analytics, no network calls of its own.** The only
-  navigation it initiates is rewriting the current tab to the Home Assistant
-  redirect URL (or a local capture page).
+  navigations it initiates are rewriting the current tab to the Home
+  Assistant redirect URL (or a local capture page) and, for a handoff, to
+  the profile's own login site.
 - **Auto-forward is gated.** By default a code is forwarded only when the
   OAuth `state` is a Home Assistant flow token (a JWT carrying `flow_id`).
   Anything else lands on a local capture page for manual copy.
@@ -37,6 +38,13 @@ extension is that something.
   request headers (`User-Agent`, `Sec-CH-UA*`) on its own login site, and
   nothing else: no cookies, credentials, or origin headers, and no other
   hosts. The changes are listed on the options page before you enable it.
+- **Handoffs are untrusted input.** Any web page can open a handoff link
+  ([Handoff](#handoff-schema-v2)), so the extension acts on one only for an
+  enabled `stashed` profile, in a top-level tab, with a sign-in URL inside
+  that profile's `loginOrigins` and a token shaped like a Home Assistant flow
+  token. The stashed token is bound to the tab and profile and expires
+  quickly. A planted handoff still ends at your own Home Assistant, where its
+  token names no real flow, so the worst case is a failed login.
 
 ## Repository layout
 
@@ -77,10 +85,10 @@ A profile is a small JSON file declaring what to watch for one provider:
   custom scheme, and/or an https callback prefix. `http://` prefixes and
   `my.home-assistant.io` itself are rejected by validation.
 - `state.rule` — `"ha-jwt"` (default): auto-forward only for Home Assistant
-  flows; `"none"`: forward whenever `code` and `state` are present.
-- `capture` is an array so future step types (e.g. an *initiation capture*
-  earlier in the flow, as some providers require) can be added without a
-  schema rewrite. v1 supports only `"redirect"`.
+  flows; `"none"`: forward whenever `code` and `state` are present;
+  `"stashed"` (schema v2): see [Handoff](#handoff-schema-v2).
+- `capture` — a list of steps. Schema v1 has only `"redirect"`; v2 adds an
+  optional `"initiation"` step before it.
 - `requestHeaders` (optional) — header changes for requests to the
   `loginOrigins` hosts, for identity providers that reject desktop browsers:
 
@@ -99,6 +107,55 @@ A profile is a small JSON file declaring what to watch for one provider:
   `Sec-CH-UA` / `Sec-CH-UA-*` may be touched, with `set` or `remove`. This
   changes request headers only; page JavaScript still sees the real
   `navigator.userAgent`.
+
+### Handoff (schema v2)
+
+Some providers feed Home Assistant's `state` into their own encryption and
+return ciphertext, so the callback can't be recognized as a Home Assistant
+flow. For those, Home Assistant hands the extension its flow token *before*
+the login starts:
+
+```json
+{
+  "schemaVersion": 2,
+  "id": "acme-app",
+  "name": "Acme App",
+  "loginOrigins": ["https://login.acme-app.com/*"],
+  "capture": [
+    { "type": "initiation", "ttlSeconds": 600 },
+    { "type": "redirect", "redirectPrefixes": ["com.acme.app://"] }
+  ],
+  "state": { "rule": "stashed" }
+}
+```
+
+1. The integration sends the browser to a handoff link, with the parameters
+   in the URL **fragment** so they never leave the machine:
+
+   ```
+   https://ha-oauth-assist.example.com/initiate/<profile id>#state_HA=<HA state>&signin_url=<provider sign-in URL>
+   ```
+
+   `ha-oauth-assist-initiate://start/<profile id>#…` is accepted too.
+   Integrations should prefer the https form: it pastes reliably, while a
+   pasted custom-scheme URL may be turned into a web search, fragment and
+   all.
+2. The extension stores `state_HA` for that tab and profile, then opens
+   `signin_url`. It refuses a `signin_url` outside the profile's
+   `loginOrigins`.
+3. When the provider redirects back, the extension forwards the `code` (or
+   `error`) to Home Assistant's redirect service with the stored `state_HA`.
+   The provider's own `state` is never forwarded.
+
+If the callback can't be forwarded automatically (for example, it lands in
+a different tab), the capture page offers *Send to Home Assistant* until
+the flow expires after `ttlSeconds` (60–900, default 600). After that, or
+when no handoff happened, it offers the raw callback URL, which is what
+Home Assistant's manual sign-in step needs.
+
+The initiation step carries no URLs: the handoff addresses are constants
+in the extension, just like the forward destination. `initiation` and
+`stashed` require each other.
 
 Providers are added by importing a profile JSON on the options page — no code
 changes. A packaged build may additionally ship presets via
@@ -172,6 +229,11 @@ prefix is parsed for `code` and `state`; Home Assistant flows are rewritten to
 the pinned redirect service, everything else goes to the local capture page.
 Captured values pass through `chrome.storage`, never through page URLs.
 
+Handoff links are caught by the same `webNavigation` listeners. The pending
+flow is written to `chrome.storage` before the tab is sent to the sign-in
+page, so it survives the service worker being stopped mid-login, and it is
+cleared on browser startup.
+
 Profiles with `requestHeaders` become `declarativeNetRequest` dynamic rules,
 rebuilt whenever the enabled profiles change. The extension uses
 `declarativeNetRequestWithHostAccess`, so a rule has no effect on any host
@@ -193,5 +255,3 @@ A redesigned set may replace it in a later release.
 1. Publish a signed build to Firefox AMO (Chrome Web Store: done).
 2. Link the reproducible build ([Packaging](#packaging)) from the store
    listings.
-3. Phase 2: an `initiation` capture step type for providers whose flow needs
-   an extra handoff before the final redirect.

@@ -12,9 +12,21 @@ which passes the code to your own Home Assistant instance. Otherwise it
 shows the code on a local page for you to copy. This destination is fixed
 in the extension and cannot be changed by a profile.
 
+Some providers need a handoff before the login starts. For those profiles,
+Home Assistant opens a handoff link that carries its login token for the
+flow and the provider's sign-in address. The extension keeps the token,
+opens the sign-in page (only if it is on that profile's own login site),
+and when the login finishes, sends the code together with that token to
+the same Home Assistant redirect service.
+
 **What it stores.** Your enabled provider profiles and the most recent
-captured code, in the browser's local extension storage on your device.
-Nothing is synced or sent to the developer or anyone else.
+captured response (the code, or for handoff providers the full callback
+URL, so you can paste it into Home Assistant yourself if needed), in the
+browser's local extension storage on your device. During a handoff login
+it also keeps Home Assistant's login token, the profile, the tab and the
+start time. That record is used only for the profile's time limit (at most
+15 minutes) and is deleted when the browser restarts. Nothing is synced or
+sent to the developer or anyone else.
 
 **Request headers.** A profile may change the User-Agent and related
 browser-identity headers on its own login site, only after you enable it.
